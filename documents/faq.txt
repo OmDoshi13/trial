@@ -1,0 +1,91 @@
+Trenkwalder Group - Frequently Asked Questions (FAQ)
+
+===================================================
+
+GENERAL QUESTIONS
+===================================================
+
+Q: What does Trenkwalder do?
+A: The Trenkwalder Group is one of the leading software-based personnel service providers for skilled workers in Europe. We have over 200 locations in 16 countries, approximately 16,000 employees, and generate a turnover of 600 million euros. We focus on qualified professionals and the integration of modern technologies into HR services.
+
+Q: How long has Trenkwalder been in business?
+A: Trenkwalder has been in the personnel services industry for over 40 years, known for continuous growth, entrepreneurial strength, and reliable partnerships.
+
+Q: What countries does Trenkwalder operate in?
+A: Trenkwalder operates across 16 countries in Central and Eastern Europe, with more than 200 locations.
+
+===================================================
+
+EMPLOYEE BENEFITS
+===================================================
+
+Q: How many vacation days do employees get?
+A: Full-time employees receive 25 vacation days per calendar year. Part-time employees receive a proportional amount based on their working hours. Unused vacation days can be carried over to the next year, up to a maximum of 5 days. Carried-over days must be used by March 31st of the following year.
+
+Q: What is the sick leave policy?
+A: Employees are entitled to up to 30 paid sick days per year. For absences longer than 3 consecutive days, a doctor's certificate is required. Sick leave does not reduce your vacation entitlement.
+
+Q: Is there a home office allowance?
+A: Yes, employees receive a home office budget of €500 per year for equipment and office supplies. This can be used for items like ergonomic chairs, desks, monitors, or other work-from-home necessities.
+
+Q: What about professional development?
+A: Each employee has a personal development budget of €2,000 per year that can be used for courses, conferences, certifications, and books. All development activities should be discussed and agreed upon with your manager during the annual development planning session.
+
+Q: Are there any health benefits?
+A: Yes, Trenkwalder offers supplementary health insurance that covers dental care, vision care, and preventive health screenings. Additionally, employees have access to a mental health support program with confidential counseling services.
+
+Q: Is there a company pension scheme?
+A: Yes, Trenkwalder offers a company pension scheme. The company contributes 3% of your gross monthly salary to your pension fund. Employees can voluntarily contribute additional amounts with tax benefits.
+
+===================================================
+
+WORK ARRANGEMENTS
+===================================================
+
+Q: Can I work remotely?
+A: Yes, employees can work remotely up to 4 days per week. At least 1 day should be spent in the office or co-working space for team collaboration. Remote work arrangements need to be agreed with your manager.
+
+Q: What are the core working hours?
+A: Core working hours are 10:00 AM to 3:00 PM CET. Outside core hours, you can flexibly arrange your time between 7:00 AM and 8:00 PM.
+
+Q: Can I work from another country?
+A: Employees may work from another EU country for up to 30 working days per year, subject to manager approval. For longer periods or non-EU countries, please consult HR for tax and legal implications.
+
+Q: What is the overtime policy?
+A: Overtime must be pre-approved by your manager. Overtime hours can be compensated either as time off (1:1) or paid out at 125% of regular hourly rate. Overtime on Sundays and public holidays is compensated at 150%.
+
+===================================================
+
+IT & SECURITY
+===================================================
+
+Q: What equipment does the company provide?
+A: The company provides a laptop (MacBook Pro or ThinkPad), external monitor, keyboard, mouse, and noise-cancelling headphones. Additional equipment can be requested through IT.
+
+Q: How do I reset my password?
+A: Use the self-service password reset portal at https://password.trenkwalder.internal or contact IT support at it-support@trenkwalder.com.
+
+Q: What is the policy on personal device usage?
+A: Company data must only be accessed from company-managed devices. Personal devices may be used for communication tools (Slack, email) with IT approval and MDM enrollment.
+
+===================================================
+
+LEAVE & TIME OFF
+===================================================
+
+Q: How do I request time off?
+A: Submit your leave request through the HR portal at least 2 weeks in advance for planned vacation. Your manager will approve or discuss alternatives within 3 business days. Emergency leave can be requested with shorter notice.
+
+Q: What about parental leave?
+A: Trenkwalder offers parental leave in accordance with local regulations. Additionally, the company provides 2 weeks of fully paid paternity leave and flexible return-to-work arrangements for all new parents.
+
+Q: Are there any special leave days?
+A: Yes, employees receive additional leave for:
+- Marriage: 2 days
+- Birth of a child: 3 days (in addition to parental leave)
+- Bereavement (immediate family): 3 days
+- Moving house: 1 day
+- Blood donation: Half day
+
+Q: What public holidays are observed?
+A: Public holidays follow the local regulations of your employment country. A complete list is available on the HR portal under "Holiday Calendar."
