@@ -1,9 +1,4 @@
-"""Tool registry — central registry of all available tools.
-
-Each tool is defined with a name, description, parameter schema,
-and the callable function. The orchestrator uses these definitions
-to decide which tool to invoke based on user intent.
-"""
+"""Tool registry — maps tool names to functions and their schemas."""
 
 import json
 from src.tools.vacation import get_vacation_days, get_sick_leave, get_upcoming_leave
@@ -11,7 +6,7 @@ from src.tools.employee import get_employee_profile
 from src.tools.payslip import get_payslip_info
 
 
-# Tool definitions — each tool has a schema the LLM can understand
+# Each tool has a name, description, and parameter schema the LLM uses to decide what to call
 TOOL_DEFINITIONS = [
     {
         "name": "get_vacation_days",
@@ -80,7 +75,7 @@ TOOL_DEFINITIONS = [
     },
 ]
 
-# Mapping from tool name to callable
+# Name → callable mapping
 TOOL_FUNCTIONS = {
     "get_vacation_days": get_vacation_days,
     "get_sick_leave": get_sick_leave,
@@ -92,10 +87,7 @@ TOOL_FUNCTIONS = {
 
 
 def execute_tool(tool_name: str, arguments: dict) -> str:
-    """Execute a tool by name with the given arguments.
-
-    Returns the result as a JSON string.
-    """
+    """Look up a tool by name, call it, return JSON result."""
     func = TOOL_FUNCTIONS.get(tool_name)
     if not func:
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -108,7 +100,7 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
 
 
 def get_tools_description() -> str:
-    """Generate a text description of all available tools for the system prompt."""
+    """Format tool definitions as text for the system prompt."""
     lines = ["Available tools:\n"]
     for tool in TOOL_DEFINITIONS:
         params = ", ".join(

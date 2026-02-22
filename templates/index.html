@@ -422,7 +422,7 @@
     </div>
 
     <!-- Hidden file input for upload -->
-    <input type="file" id="fileInput" accept=".pdf,.txt,.md" multiple onchange="handleFileSelect(event)">
+    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.doc,.docx" multiple onchange="handleFileSelect(event)">
 
     <div class="main-content">
         <!-- Sidebar: Document list -->
@@ -690,8 +690,32 @@
         }
 
         async function resetChat() {
-            try { await fetch('/api/reset', { method: 'POST' }); } catch {}
-            location.reload();
+            try { await fetch('/api/reset', { method: 'POST' }); } catch(e) {}
+            var c = document.getElementById('chatContainer');
+            while (c.firstChild) c.removeChild(c.firstChild);
+
+            var welcomeDiv = document.createElement('div');
+            welcomeDiv.className = 'welcome';
+            welcomeDiv.id = 'welcome';
+
+            var iconDiv = document.createElement('div');
+            iconDiv.className = 'icon';
+            iconDiv.textContent = '💬';
+            welcomeDiv.appendChild(iconDiv);
+
+            var h2 = document.createElement('h2');
+            h2.textContent = 'Welcome to the Chat';
+            welcomeDiv.appendChild(h2);
+
+            var p = document.createElement('p');
+            p.innerHTML = "Upload a document to get started — I'll answer your questions<br>based on the content of the files you share.";
+            welcomeDiv.appendChild(p);
+
+            c.appendChild(welcomeDiv);
+
+            var d = document.getElementById('docList');
+            if (d) d.innerHTML = '<p class="no-docs">No documents uploaded yet</p>';
+            document.getElementById('messageInput').value = '';
         }
 
         messageInput.focus();

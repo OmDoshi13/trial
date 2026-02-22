@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from src.ingestion.loader import load_txt, load_markdown, load_documents
+from src.ingestion.loader import load_txt, load_markdown, load_docx, load_documents
 
 
 def test_load_txt():
@@ -33,3 +33,22 @@ def test_load_documents_from_directory():
         docs = load_documents(Path(tmpdir))
         assert len(docs) == 1
         assert docs[0].content == "Test content"
+
+
+def test_load_docx():
+    """Test loading a .docx file."""
+    from docx import Document as DocxDocument
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+        tmp_path = Path(f.name)
+    # Create a minimal .docx using python-docx
+    doc = DocxDocument()
+    doc.add_paragraph("Hello from a Word document.")
+    doc.add_paragraph("This is the second paragraph.")
+    doc.save(str(tmp_path))
+
+    loaded = load_docx(tmp_path)
+    assert "Hello from a Word document." in loaded.content
+    assert "second paragraph" in loaded.content
+    assert loaded.format == "docx"
+    tmp_path.unlink()

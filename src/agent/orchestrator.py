@@ -1,14 +1,4 @@
-"""Agent orchestrator — the brain of the chatbot.
-
-Handles the full conversation flow:
-1. Sends user message + system prompt to LLM
-2. Parses LLM response for tool calls
-3. Executes tools (including RAG document search)
-4. Sends tool results back to LLM for final answer
-
-Key design: every user question that might relate to documents automatically
-triggers a vector search so the LLM always has context from the knowledge base.
-"""
+"""Handles the conversation loop: user message → LLM → tool calls → final answer."""
 
 import re
 import json
@@ -18,17 +8,16 @@ import httpx
 
 from src.config import settings
 from src.agent.prompts import SYSTEM_PROMPT, ANSWER_WITH_CONTEXT_PROMPT
-from src.tools.registry import execute_tool, TOOL_FUNCTIONS
+from src.tools.registry import execute_tool, TOOL_FUNCTIONS, TOOL_DEFINITIONS
 from src.retrieval.vector_store import get_vector_store
 
-# Directories where documents live
 _DOCS_DIR = Path(__file__).parent.parent.parent / "documents"
 _UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads"
-_SUPPORTED = {".pdf", ".txt", ".md"}
+_SUPPORTED = {".pdf", ".txt", ".md", ".doc", ".docx"}
 
 
 def _list_all_document_names() -> list[str]:
-    """Return the filenames of every document in the knowledge base."""
+    """Get filenames of all docs in both directories."""
     names: list[str] = []
     for folder in (_DOCS_DIR, _UPLOAD_DIR):
         if folder.exists():
@@ -38,7 +27,7 @@ def _list_all_document_names() -> list[str]:
     return names
 
 
-# Simple keyword heuristics to decide if a message is about document content
+# Keywords that hint the user is asking about document content
 _DOC_KEYWORDS = [
     "document", "file", "uploaded", "pdf", "resume", "cv", "report",
     "skills", "experience", "education", "qualifications", "summary",
@@ -47,38 +36,53 @@ _DOC_KEYWORDS = [
     "what does", "what is", "tell me about", "information",
 ]
 
+# Keywords that indicate an HR tool question — skip document search for these
+_HR_KEYWORDS = [
+    "salary", "payslip", "pay", "wage", "gross", "net", "deduction",
+    "vacation", "holiday", "pto", "time off", "days off", "annual leave",
+    "sick leave", "sick day",
+    "upcoming leave", "scheduled leave", "planned leave",
+    "employee profile", "my profile", "my manager", "my team",
+    "who is my", "what team", "what department",
+    "Om Doshi", "Klahm Sebestian", "emp001", "emp002",
+    "my salary", "my pay", "my vacation", "my leave", "my sick",
+    "how many vacation", "how many sick", "how many days",
+    "remaining days", "remaining leave", "leave balance",
+]
+
+
+def _looks_like_hr_question(text: str) -> bool:
+    """Check if this is about personal HR data (salary, leave, profile)."""
+    lower = text.lower()
+    return any(kw in lower for kw in _HR_KEYWORDS)
+
 
 def _looks_like_document_question(text: str) -> bool:
-    """Return True if the user message likely concerns document content."""
+    """Quick check: does this message seem to be about a document?
+    Returns False for HR-specific questions even if they match doc keywords."""
     lower = text.lower()
-    # Very short greetings are not document questions
     if len(lower.split()) <= 2 and any(w in lower for w in ("hi", "hello", "hey", "thanks", "bye")):
         return False
-    # Check for keyword overlap
+    if _looks_like_hr_question(lower):
+        return False
     return any(kw in lower for kw in _DOC_KEYWORDS)
 
 
 class Orchestrator:
-    """Main chatbot orchestrator that coordinates LLM, tools, and RAG."""
+    """Coordinates LLM calls, tool execution, and RAG search."""
 
     def __init__(self):
         self.conversation_history: list[dict] = []
-        # Tracks the most recently uploaded document in this session so
-        # that vague references like "the document" resolve correctly.
         self._last_uploaded_title: str | None = None
         self._last_uploaded_filename: str | None = None
 
     def set_last_uploaded(self, filename: str, title: str) -> None:
-        """Called by the upload endpoint after a successful ingestion."""
+        """Track which doc was just uploaded so "the document" resolves to it."""
         self._last_uploaded_filename = filename
         self._last_uploaded_title = title
 
-    # ------------------------------------------------------------------
-    # Dynamic system prompt — rebuilt on every call so uploaded docs are
-    # always listed and the *current* document is highlighted.
-    # ------------------------------------------------------------------
     def _build_system_prompt(self) -> str:
-        """Build the system prompt with the current list of documents."""
+        """Build system prompt with current doc list baked in."""
         doc_names = _list_all_document_names()
         parts: list[str] = []
         if doc_names:
@@ -105,7 +109,7 @@ class Orchestrator:
         )
 
     def _call_llm(self, messages: list[dict]) -> str:
-        """Call Ollama's chat API."""
+        """Send messages to Ollama and return the response text."""
         response = httpx.post(
             f"{settings.ollama_base_url}/api/chat",
             json={
@@ -124,41 +128,31 @@ class Orchestrator:
         return data["message"]["content"]
 
     def _parse_tool_calls(self, response: str) -> list[dict]:
-        """Parse TOOL_CALL directives from LLM response.
-
-        Expected format: TOOL_CALL: tool_name(param1="value1", param2="value2")
-        """
+        """Extract TOOL_CALL: name(key="val") directives from LLM output.
+        Only returns calls for tools that actually exist."""
+        valid_names = {t["name"] for t in TOOL_DEFINITIONS}
         tool_calls = []
         pattern = r'TOOL_CALL:\s*(\w+)\(([^)]*)\)'
         matches = re.findall(pattern, response)
 
         for name, args_str in matches:
-            # Parse the arguments
+            if name not in valid_names:
+                continue  # ignore hallucinated tool names
             arguments = {}
             if args_str.strip():
-                # Match key="value" pairs
                 arg_pattern = r'(\w+)\s*=\s*"([^"]*)"'
                 arg_matches = re.findall(arg_pattern, args_str)
                 for key, value in arg_matches:
                     arguments[key] = value
-
             tool_calls.append({"name": name, "arguments": arguments})
 
         return tool_calls
 
     def _execute_document_search(self, query: str, n_results: int = 5) -> str:
-        """Execute RAG document search.
-
-        Search strategy (in priority order):
-        1. If a document was recently uploaded in this session, search
-           specifically within that document's chunks first.
-        2. Also search across all uploaded documents.
-        3. Also search across the full knowledge base.
-        Results are merged with the current-document chunks first.
-        """
+        """Run a prioritised vector search: current doc → uploads → everything."""
         store = get_vector_store()
 
-        # --- Priority 1: search within the CURRENT (last-uploaded) document ---
+        # 1) Search within the most recently uploaded doc
         current_doc_results: list[dict] = []
         if self._last_uploaded_title:
             try:
@@ -170,7 +164,7 @@ class Orchestrator:
             except Exception:
                 pass
 
-        # --- Priority 2: search all uploaded documents ---
+        # 2) Search all uploaded docs
         uploaded_results: list[dict] = []
         lower_q = query.lower()
         upload_keywords = ["upload", "document", "file", "pdf", "cv", "resume", "report"]
@@ -184,10 +178,10 @@ class Orchestrator:
             except Exception:
                 pass
 
-        # --- Priority 3: general search across all documents ---
+        # 3) General search across everything
         general_results = store.query(query_text=query, n_results=n_results)
 
-        # Merge with deduplication: current doc first, then other uploads, then general
+        # Merge and deduplicate (current doc chunks first)
         seen_texts: set[str] = set()
         merged: list[dict] = []
         for r in current_doc_results + uploaded_results + general_results:
@@ -195,7 +189,7 @@ class Orchestrator:
                 seen_texts.add(r["text"])
                 merged.append(r)
 
-        results = merged[: n_results + 3]  # keep a few extra for quality
+        results = merged[: n_results + 3]
 
         if not results:
             return "No relevant documents found."
@@ -211,18 +205,16 @@ class Orchestrator:
         return "\n\n---\n\n".join(context_parts)
 
     def _execute_all_tools(self, tool_calls: list[dict]) -> str:
-        """Execute all tool calls and format results."""
+        """Run each tool call and collect formatted results."""
         results = []
         for tc in tool_calls:
             name = tc["name"]
             args = tc["arguments"]
 
             if name == "search_documents":
-                # Be lenient: accept "query" key, or fall back to the first
-                # value the LLM provided (it sometimes uses "param1" etc.)
                 query = args.get("query") or next(iter(args.values()), "")
                 if not query:
-                    continue  # skip empty search — pre-emptive search covers it
+                    continue
                 result = self._execute_document_search(query)
                 results.append(f"📄 Document Search Results for '{query}':\n{result}")
             else:
@@ -232,63 +224,35 @@ class Orchestrator:
         return "\n\n".join(results)
 
     def chat(self, user_message: str) -> str:
-        """Process a user message and return the chatbot's response.
-
-        Flow:
-        1. Build an up-to-date system prompt (includes uploaded file names)
-        2. If the message looks document-related, proactively search the
-           knowledge base so we always have context regardless of whether
-           the LLM emits a TOOL_CALL.
-        3. Send message to LLM with system prompt
-        4. Parse any additional TOOL_CALL directives and execute them
-        5. Combine all context and ask the LLM for a final answer
-        """
-        # 0. Fresh system prompt with current docs list
+        """Main entry point: take a user message, return the bot's answer."""
         system_prompt = self._build_system_prompt()
-
-        # Add user message to history
         self.conversation_history.append({"role": "user", "content": user_message})
 
-        # ------------------------------------------------------------------
-        # 1. PRE-EMPTIVE document search — the key reliability improvement.
-        #    If the user's question looks like it's about document content,
-        #    we run a vector search NOW so the LLM always has that context,
-        #    even if it forgets to emit TOOL_CALL: search_documents.
-        # ------------------------------------------------------------------
+        # Pre-emptive search: if the question looks doc-related, search now
+        # so we have context even if the LLM forgets to call the tool
         preemptive_context: str | None = None
         if _looks_like_document_question(user_message):
             preemptive_context = self._execute_document_search(user_message)
 
-        # Build messages for LLM
         messages = [
             {"role": "system", "content": system_prompt},
-            *self.conversation_history[-10:],  # Keep last 10 messages for context
+            *self.conversation_history[-10:],
         ]
 
-        # Step 2: Get LLM's initial response (may contain tool calls)
         llm_response = self._call_llm(messages)
-
-        # Step 3: Check for tool calls
         tool_calls = self._parse_tool_calls(llm_response)
 
-        # ------------------------------------------------------------------
-        # 2. Collect ALL context — from pre-emptive search AND tool calls.
-        #    Always include pre-emptive results when we have a current doc
-        #    because the LLM's own tool call may be malformed / wrong query.
-        # ------------------------------------------------------------------
+        # Collect context from pre-emptive search + any LLM tool calls
         all_context_parts: list[str] = []
 
-        # Add pre-emptive search results
         if preemptive_context:
             all_context_parts.append(
                 f"📄 Document Search Results (auto):\n{preemptive_context}"
             )
 
-        # Execute any explicit tool calls from the LLM (excluding search_documents
-        # if we already did a pre-emptive search, to avoid duplicate noise)
         if tool_calls:
             if preemptive_context:
-                # Filter out search_documents calls — we already searched
+                # Skip duplicate search_documents calls
                 non_search_calls = [tc for tc in tool_calls if tc["name"] != "search_documents"]
                 if non_search_calls:
                     tool_results = self._execute_all_tools(non_search_calls)
@@ -297,15 +261,10 @@ class Orchestrator:
                 tool_results = self._execute_all_tools(tool_calls)
                 all_context_parts.append(tool_results)
 
-        # ------------------------------------------------------------------
-        # 3. If we have context from tools/search, ask LLM to synthesize a
-        #    final answer grounded in the retrieved information.
-        # ------------------------------------------------------------------
+        # If we have context, ask the LLM to synthesise a grounded answer
         if all_context_parts:
             combined_context = "\n\n".join(all_context_parts)
 
-            # Prepend a note about the current document so the LLM knows
-            # what "the document" refers to.
             if self._last_uploaded_filename:
                 combined_context = (
                     f"⚡ The most recently uploaded document in this session is: "
@@ -329,19 +288,20 @@ class Orchestrator:
             ]
 
             final_response = self._call_llm(answer_messages)
-
-            # Safety: strip any stray TOOL_CALL lines the LLM may still emit
             final_response = re.sub(r'TOOL_CALL:\s*\w+\([^)]*\)\s*', '', final_response).strip()
 
             self.conversation_history.append({"role": "assistant", "content": final_response})
             return final_response
         else:
-            # No tool calls and no pre-emptive search — direct LLM response
-            self.conversation_history.append({"role": "assistant", "content": llm_response})
-            return llm_response
+            # Strip any leaked TOOL_CALL text from direct responses
+            clean = re.sub(r'TOOL_CALL:\s*\w+\([^)]*\)\s*', '', llm_response).strip()
+            if not clean:
+                clean = "I'm sorry, I don't have the information to answer that. Could you rephrase your question?"
+            self.conversation_history.append({"role": "assistant", "content": clean})
+            return clean
 
     def reset(self):
-        """Clear conversation history and uploaded-document tracking."""
+        """Wipe conversation history and uploaded-doc tracking."""
         self.conversation_history = []
         self._last_uploaded_title = None
         self._last_uploaded_filename = None

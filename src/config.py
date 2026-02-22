@@ -1,16 +1,18 @@
-"""Centralized configuration using pydantic-settings."""
+"""App settings — loaded from env vars / .env file."""
 
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables and .env file."""
 
     # Ollama
     ollama_base_url: str = "http://localhost:11434"
     llm_model: str = "llama3.2"
     embedding_model: str = "nomic-embed-text"
+
+    # Mock HR service
+    mock_hr_base_url: str = "http://localhost:8001"
 
     # Paths
     chroma_persist_dir: str = "./data/chroma_db"

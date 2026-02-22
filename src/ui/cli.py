@@ -1,4 +1,4 @@
-"""CLI interface using Rich for beautiful terminal output."""
+"""Terminal-based chat interface using Rich."""
 
 from rich.console import Console
 from rich.panel import Panel

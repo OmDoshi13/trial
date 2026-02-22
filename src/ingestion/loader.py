@@ -1,7 +1,6 @@
-"""Multi-format document loader.
+"""Multi-format document loader (PDF, TXT, Markdown, DOC/DOCX).
 
-Supports PDF, TXT, and Markdown files using a strategy pattern —
-each format has its own loader function, making it easy to extend.
+Each format has its own loader function — add a new one to support more types.
 """
 
 from pathlib import Path
@@ -9,70 +8,83 @@ from dataclasses import dataclass
 import fitz  # PyMuPDF
 import markdown
 from bs4 import BeautifulSoup
+from docx import Document as DocxDocument
 
 
 @dataclass
 class Document:
-    """Represents a loaded document with its content and metadata."""
     content: str
-    source: str          # file path
-    format: str          # pdf, txt, md
-    title: str           # filename without extension
+    source: str
+    format: str
+    title: str
 
 
 def load_pdf(path: Path) -> Document:
-    """Extract text from a PDF file using PyMuPDF."""
+    """Extract text from PDF using PyMuPDF."""
     doc = fitz.open(str(path))
-    text_parts = []
-    for page in doc:
-        text_parts.append(page.get_text())
+    text_parts = [page.get_text() for page in doc]
     doc.close()
     return Document(
         content="\n".join(text_parts).strip(),
-        source=str(path),
-        format="pdf",
-        title=path.stem,
+        source=str(path), format="pdf", title=path.stem,
     )
 
 
 def load_txt(path: Path) -> Document:
-    """Load plain text file."""
     content = path.read_text(encoding="utf-8")
-    return Document(
-        content=content.strip(),
-        source=str(path),
-        format="txt",
-        title=path.stem,
-    )
+    return Document(content=content.strip(), source=str(path), format="txt", title=path.stem)
 
 
 def load_markdown(path: Path) -> Document:
-    """Load Markdown file and convert to plain text."""
+    """Convert Markdown → HTML → plain text."""
     raw = path.read_text(encoding="utf-8")
     html = markdown.markdown(raw, extensions=["tables", "fenced_code"])
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator="\n")
+    text = BeautifulSoup(html, "html.parser").get_text(separator="\n")
+    return Document(content=text.strip(), source=str(path), format="md", title=path.stem)
+
+
+def load_docx(path: Path) -> Document:
+    """Read paragraphs from a .docx file."""
+    doc = DocxDocument(str(path))
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
     return Document(
-        content=text.strip(),
-        source=str(path),
-        format="md",
-        title=path.stem,
+        content="\n".join(paragraphs).strip(),
+        source=str(path), format="docx", title=path.stem,
     )
 
 
-# Strategy mapping: file extension → loader function
+def load_doc(path: Path) -> Document:
+    """Try reading .doc as docx first; fall back to raw text extraction."""
+    try:
+        return load_docx(path)
+    except Exception:
+        raw = path.read_bytes()
+        text = raw.decode("utf-8", errors="ignore")
+        lines = []
+        for line in text.split("\n"):
+            printable = sum(1 for c in line if c.isprintable() or c in ("\t",))
+            if len(line) > 0 and printable / len(line) > 0.8:
+                lines.append(line.strip())
+        return Document(
+            content="\n".join(lines).strip(),
+            source=str(path), format="doc", title=path.stem,
+        )
+
+
+# Extension → loader mapping
 LOADERS = {
     ".pdf": load_pdf,
     ".txt": load_txt,
     ".md": load_markdown,
+    ".docx": load_docx,
+    ".doc": load_doc,
 }
 
-# Supported extensions for upload validation
 SUPPORTED_EXTENSIONS = set(LOADERS.keys())
 
 
 def load_single_file(path: Path) -> Document:
-    """Load a single file by path. Raises ValueError if format unsupported."""
+    """Load one file. Raises ValueError for unsupported/empty files."""
     ext = path.suffix.lower()
     loader = LOADERS.get(ext)
     if not loader:
@@ -87,11 +99,7 @@ def load_single_file(path: Path) -> Document:
 
 
 def load_documents(directory: Path) -> list[Document]:
-    """Load all supported documents from a directory.
-
-    Uses the strategy pattern — each extension maps to its own loader.
-    Unsupported formats are silently skipped.
-    """
+    """Load all supported files from a directory, skip the rest."""
     documents = []
     if not directory.exists():
         raise FileNotFoundError(f"Documents directory not found: {directory}")
@@ -106,10 +114,10 @@ def load_documents(directory: Path) -> list[Document]:
                 if doc.content:
                     documents.append(doc)
                 else:
-                    print(f"  ⚠ Skipping empty document: {file_path.name}")
+                    print(f"  ⚠ Skipping empty: {file_path.name}")
             except Exception as e:
                 print(f"  ✗ Error loading {file_path.name}: {e}")
         else:
-            print(f"  ⊘ Skipping unsupported format: {file_path.name}")
+            print(f"  ⊘ Skipping unsupported: {file_path.name}")
 
     return documents

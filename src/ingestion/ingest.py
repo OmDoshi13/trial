@@ -1,14 +1,8 @@
-"""Document ingestion pipeline.
-
-Orchestrates: load documents → chunk → embed → store in ChromaDB.
-Run this module directly to ingest all documents:
-    python -m src.ingestion.ingest
-"""
+"""Ingestion pipeline: load → chunk → embed → store in ChromaDB."""
 
 import sys
 from pathlib import Path
 
-# Ensure project root is on path when run as module
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.config import settings
@@ -18,19 +12,13 @@ from src.retrieval.vector_store import get_vector_store
 
 
 def ingest_single_file(file_path: Path) -> dict:
-    """Ingest a single uploaded file into the vector store.
-
-    Returns a summary dict with ingestion stats.
-    """
-    # 1. Load the document
+    """Process one uploaded file and add its chunks to the vector store."""
     doc = load_single_file(file_path)
 
-    # 2. Chunk it
     chunks = chunk_document(doc, chunk_size=500, chunk_overlap=50)
     if not chunks:
         raise ValueError(f"No chunks produced from {file_path.name}")
 
-    # 3. Store in vector DB
     store = get_vector_store()
     texts = [c.text for c in chunks]
     metadatas = [
@@ -39,7 +27,7 @@ def ingest_single_file(file_path: Path) -> dict:
             "format": c.format,
             "title": c.title,
             "chunk_index": c.chunk_index,
-            "uploaded": "true",  # tag so we can distinguish uploads
+            "uploaded": "true",
         }
         for c in chunks
     ]
@@ -56,12 +44,11 @@ def ingest_single_file(file_path: Path) -> dict:
 
 
 def ingest_all():
-    """Main ingestion pipeline."""
+    """Batch-ingest every document in the documents/ directory."""
     print("=" * 60)
     print("  Trenkwalder Chatbot — Document Ingestion")
     print("=" * 60)
 
-    # 1. Load documents
     print(f"\n📂 Loading documents from: {settings.docs_path}")
     documents = load_documents(settings.docs_path)
     print(f"   ✓ Loaded {len(documents)} documents\n")
@@ -70,7 +57,6 @@ def ingest_all():
         print("   ⚠ No documents found. Add files to the documents/ directory.")
         return
 
-    # 2. Chunk documents
     print("✂  Chunking documents...")
     all_chunks = []
     for doc in documents:
@@ -79,11 +65,8 @@ def ingest_all():
         print(f"   {doc.title}.{doc.format} → {len(chunks)} chunks")
     print(f"   ✓ Total chunks: {len(all_chunks)}\n")
 
-    # 3. Store in vector database (embedding happens inside ChromaDB via Ollama)
     print("💾 Storing in ChromaDB with embeddings...")
     store = get_vector_store()
-
-    # Prepare data for ChromaDB
     texts = [c.text for c in all_chunks]
     metadatas = [
         {"source": c.source, "format": c.format, "title": c.title, "chunk_index": c.chunk_index}

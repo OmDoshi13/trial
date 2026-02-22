@@ -1,8 +1,4 @@
-"""ChromaDB vector store wrapper.
-
-Uses Ollama embeddings via a custom embedding function for ChromaDB.
-Provides a clean interface for adding and querying document chunks.
-"""
+"""ChromaDB vector store — stores document chunks and runs similarity search."""
 
 import chromadb
 from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
@@ -12,14 +8,13 @@ from src.config import settings
 
 
 class OllamaEmbeddingFunction(EmbeddingFunction):
-    """Custom ChromaDB embedding function that uses Ollama."""
+    """Generates embeddings by calling the local Ollama API."""
 
     def __init__(self, model: str, base_url: str):
         self.model = model
         self.base_url = base_url
 
     def __call__(self, input: Documents) -> Embeddings:
-        """Generate embeddings for a list of documents."""
         embeddings = []
         for text in input:
             response = httpx.post(
@@ -34,16 +29,14 @@ class OllamaEmbeddingFunction(EmbeddingFunction):
 
 
 class VectorStore:
-    """Wrapper around ChromaDB for document storage and retrieval."""
+    """Thin wrapper around a ChromaDB collection for add/query/clear."""
 
     def __init__(self):
         self.embedding_fn = OllamaEmbeddingFunction(
             model=settings.embedding_model,
             base_url=settings.ollama_base_url,
         )
-        self.client = chromadb.PersistentClient(
-            path=str(settings.chroma_path),
-        )
+        self.client = chromadb.PersistentClient(path=str(settings.chroma_path))
         self.collection = self.client.get_or_create_collection(
             name="trenkwalder_docs",
             embedding_function=self.embedding_fn,
@@ -51,55 +44,59 @@ class VectorStore:
         )
 
     def add(self, texts: list[str], metadatas: list[dict], ids: list[str]):
-        """Add documents to the vector store."""
-        # ChromaDB handles embedding via our custom function
-        self.collection.upsert(
-            documents=texts,
-            metadatas=metadatas,
-            ids=ids,
-        )
+        """Upsert document chunks into the collection."""
+        self.collection.upsert(documents=texts, metadatas=metadatas, ids=ids)
 
     def query(self, query_text: str, n_results: int = 3, where: dict | None = None) -> list[dict]:
-        """Query the vector store and return relevant chunks with metadata.
-
-        Args:
-            query_text: The text to search for.
-            n_results: Maximum number of results.
-            where: Optional ChromaDB metadata filter, e.g. {"uploaded": "true"}.
-        """
-        kwargs: dict = {
-            "query_texts": [query_text],
-            "n_results": n_results,
-        }
+        """Return the top-N most similar chunks for a query."""
+        kwargs: dict = {"query_texts": [query_text], "n_results": n_results}
         if where:
             kwargs["where"] = where
 
         results = self.collection.query(**kwargs)
 
-        # Format results into a clean list
         chunks = []
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
-                chunk = {
+                chunks.append({
                     "text": doc,
                     "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
                     "distance": results["distances"][0][i] if results["distances"] else None,
-                }
-                chunks.append(chunk)
+                })
         return chunks
 
     @property
     def count(self) -> int:
-        """Return the number of documents in the store."""
         return self.collection.count()
 
+    def clear_uploads(self) -> int:
+        """Delete only chunks tagged as uploaded."""
+        try:
+            results = self.collection.get(where={"uploaded": "true"})
+            if results and results["ids"]:
+                self.collection.delete(ids=results["ids"])
+                return len(results["ids"])
+        except Exception:
+            pass
+        return 0
 
-# Module-level singleton
+    def clear_all(self) -> int:
+        """Drop and recreate the collection (full wipe)."""
+        count = self.count
+        self.client.delete_collection("trenkwalder_docs")
+        self.collection = self.client.get_or_create_collection(
+            name="trenkwalder_docs",
+            embedding_function=self.embedding_fn,
+            metadata={"hnsw:space": "cosine"},
+        )
+        return count
+
+
 _store: VectorStore | None = None
 
 
 def get_vector_store() -> VectorStore:
-    """Get or create the vector store singleton."""
+    """Lazy singleton so every module shares one store instance."""
     global _store
     if _store is None:
         _store = VectorStore()
